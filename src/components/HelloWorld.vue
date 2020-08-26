@@ -1,6 +1,11 @@
 <template>
   <div class="hello">
     <h1>{{ msg }}</h1>
+    <p v-show="false">
+      <input type="text" />
+      <button>Change the Title</button>
+      <button>Cancel</button>
+    </p>
     <p>
       For a guide and recipes on how to configure / customize this project,<br>
       check out the
@@ -36,8 +41,20 @@
 export default {
   name: 'HelloWorld',
   props: {
-    msg: String
-  }
+    incomingMsg: String
+  },
+  data() {
+    return {
+      msg: this.incomingMsg,
+      inputMessage: null,
+      isChanging: false
+    };
+  },
+  methods: {
+    changeMessage() {
+
+    }
+  },
 }
 </script>
 
