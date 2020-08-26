@@ -58,8 +58,9 @@ See [Configuration Reference](https://cli.vuejs.org/config/).
 
 ### Add a new "About Me" page in the router
 ```
-1. Add an "About Me" link adjacent to 
-2. Default the input to the current message
-3. When clicking "Change the Title", hide the <p> tag and update the message
-4. When clicking "Cancel", hide the <p> tag and do not update the message
+1. Add an "About Me" link adjacent to  "About Us" where you will make a page about you
+2. Use the router pattern to navigate to the "About Me" page
+3. You can use the avatar in this project as your photo
+4. Focus on a cleanly styled presentation
+5. Include a Heading, the photo, and a short paragraph about yourself
 ```
