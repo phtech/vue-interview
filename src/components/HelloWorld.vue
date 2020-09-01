@@ -47,7 +47,7 @@ export default {
     return {
       msg: this.incomingMsg,
       inputMessage: null,
-      isChanging: false
+      inChangeMode: false
     };
   },
   methods: {
