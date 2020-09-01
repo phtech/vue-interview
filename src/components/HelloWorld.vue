@@ -1,9 +1,9 @@
 <template>
   <div class="hello">
-    <h1>{{ msg }}</h1>
-    <p v-show="false">
-      <input type="text" />
-      <button>Change the Title</button>
+    <h1 @click='changeMessage'>{{ msg }}</h1>
+    <p v-show="inChangeMode">
+      <input type="text" :value='msg'/>
+      <button @click='HideP(msg)'>Change the Title</button>
       <button>Cancel</button>
     </p>
     <p>
@@ -52,7 +52,12 @@ export default {
   },
   methods: {
     changeMessage() {
-
+      this.inChangeMode = true
+    },
+    HideP(msg) {
+      console.log(msg)
+      this.inChangeMode = false
+      this.msg = msg
     }
   },
 }
