@@ -2,7 +2,7 @@
   <div class="hello">
     <h1 @click='changeMessage'>{{ msg }}</h1>
     <p v-show="inChangeMode">
-      <input type="text" :value='msg'/>
+      <input type="text" v-model='msg'/>
       <button @click='HideP(msg)'>Change the Title</button>
       <button>Cancel</button>
     </p>
