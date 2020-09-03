@@ -1,9 +1,9 @@
 <template>
   <div class="hello">
-    <h1>{{ msg }}</h1>
-    <p v-show="false">
-      <input type="text" />
-      <button>Change the Title</button>
+    <h1 @click="setToChangeMode">{{ msg }}</h1>
+    <p v-show="inChangeMode">
+      <input type="text" v-model="inputMessage"/>
+      <button @click="changeTitle">Change the Title</button>
       <button>Cancel</button>
     </p>
     <p>
@@ -51,8 +51,13 @@ export default {
     };
   },
   methods: {
-    changeMessage() {
-
+    setToChangeMode: function (event) {
+      this.inChangeMode = true
+      this.inputMessage = this.msg
+    },
+    changeTitle: function (event) {
+      this.inChangeMode = false
+      this.msg = this.inputMessage
     }
   },
 }
