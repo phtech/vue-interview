@@ -17,6 +17,7 @@
         </p>
       </div>
     </div>
+    <!-- I ASKED HIM TO MAKE THE FOLLOWING SECTION AND DESCRIBED IT TO HIM (TRAVIS) -->
     <div class="card" id="cool-card">
       <div class="header">
         <div class="profile-img">
