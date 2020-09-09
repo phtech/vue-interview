@@ -1,7 +1,7 @@
 <template>
   <div class="home">
     <img alt="Vue logo" src="../assets/logo.png">
-    <HelloWorld incomingMsg="Welcome to Your Vue.js App"/>
+    <HelloWorld :incomingMsg="msg" @onMessageChange="updateMessage"/>
   </div>
 </template>
 
@@ -11,8 +11,18 @@ import HelloWorld from '@/components/HelloWorld.vue'
 
 export default {
   name: 'Home',
+  data() {
+    return {
+      msg: "Welcome to Your Vue.js App"
+    }
+  },
   components: {
     HelloWorld
+  },
+  methods: {
+    updateMessage(message){
+      this.msg = message;
+    }
   }
 }
 </script>

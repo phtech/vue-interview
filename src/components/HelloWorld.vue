@@ -1,10 +1,10 @@
 <template>
   <div class="hello">
-    <h1>{{ msg }}</h1>
-    <p v-show="false">
-      <input type="text" />
-      <button>Change the Title</button>
-      <button>Cancel</button>
+    <h1 @click="inChangeMode = true">{{ incomingMsg }}</h1>
+    <p v-show="inChangeMode">
+      <input type="text" v-model="inputMessage" />
+      <button @click="changeMessage()">Change the Title</button>
+      <button @click="inChangeMode = false">Cancel</button>
     </p>
     <p>
       For a guide and recipes on how to configure / customize this project,<br>
@@ -45,14 +45,14 @@ export default {
   },
   data() {
     return {
-      msg: this.incomingMsg,
       inputMessage: null,
       inChangeMode: false
     };
   },
   methods: {
     changeMessage() {
-
+      this.$emit('onMessageChange', this.inputMessage);
+      this.inChangeMode = false;
     }
   },
 }
