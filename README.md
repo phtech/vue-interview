@@ -59,8 +59,9 @@ See [Configuration Reference](https://cli.vuejs.org/config/).
 ### Add a new "About Me" page in the router
 ```
 1. Add an "About Me" link adjacent to  "About Us" where you will make a page about you
-2. Use the router pattern to navigate to the "About Me" page
-3. You can use the avatar in this project as your photo
-4. Focus on a cleanly styled presentation
-5. Include a Heading, the photo, and a short paragraph about yourself
+2. Add a link to the "About Me" page to the header links.
+3. Navigate to the "About Me" page through the link.
+4. You can use the avatar in this project as your photo
+5. Focus on a cleanly styled presentation
+6. Include a Heading, the photo, and a short paragraph about yourself
 ```
