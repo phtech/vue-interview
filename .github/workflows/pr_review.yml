@@ -1,0 +1,260 @@
+name: 'PR Guardian AI Review'
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+# Add permissions block at the workflow level
+permissions:
+  pull-requests: read  # Allows reading PR comments
+  contents: read      # Allows reading repository contents
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Repo'
+        uses: actions/checkout@v4
+        with:
+          # We need the full history to generate a proper diff
+          fetch-depth: 0
+
+      - name: 'Generate Review ID'
+        id: review-id
+        run: |
+          # Generate a unique ID for this review
+          REVIEW_ID="pr-guardian-$(date +%s)-$(openssl rand -hex 4)"
+          echo "review_id=$REVIEW_ID" >> $GITHUB_OUTPUT
+          echo "Generated review ID: $REVIEW_ID"
+
+      - name: 'Generate Diff'
+        id: git-diff
+        run: |
+          # Get the base and head commit SHAs for more reliable diffing
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          echo "Base branch: ${{ github.base_ref }} (${BASE_SHA})"
+          echo "Head branch: ${{ github.head_ref }} (${HEAD_SHA})"
+          
+          # Generate diff between the base and head commits
+          DIFF=$(git diff ${BASE_SHA}..${HEAD_SHA})
+          
+          # Check if diff is empty
+          if [ -z "$DIFF" ]; then
+            echo "No changes detected in diff"
+            echo "diff_payload=" >> $GITHUB_OUTPUT
+          else
+            echo "Diff generated successfully ($(echo "$DIFF" | wc -l) lines)"
+            # Store the diff in the output
+            echo "diff_payload<<EOF" >> $GITHUB_OUTPUT
+            echo "$DIFF" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 'Trigger AI Review'
+        id: trigger-review
+        if: steps.git-diff.outputs.diff_payload != ''
+        run: |
+          # Validate required secrets
+          if [ -z "${{ secrets.PR_GUARDIAN_API_URL }}" ]; then
+            echo "❌ Error: PR_GUARDIAN_API_URL secret is not set in GitHub repository secrets"
+            echo "Please add the API Gateway URL to your repository secrets"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.PR_GUARDIAN_API_KEY }}" ]; then
+            echo "❌ Error: PR_GUARDIAN_API_KEY secret is not set in GitHub repository secrets"
+            echo "Please add the API key to your repository secrets"
+            exit 1
+          fi
+          
+          # Debug: Print API URL (without sensitive parts)
+          API_URL="${{ secrets.PR_GUARDIAN_API_URL }}"
+          # Remove sensitive URL logging
+          echo "API URL configured"
+          
+          # Validate URL format
+          if [[ ! "$API_URL" =~ ^https?:// ]]; then
+            echo "❌ Error: PR_GUARDIAN_API_URL must be a valid URL"
+            exit 1
+          fi
+          
+          # Ensure URL ends with /review
+          if [[ ! "$API_URL" =~ /review$ ]]; then
+            API_URL="${API_URL%/}/review"
+          fi
+          
+          echo "Using API URL: ${API_URL}"
+          
+          # Construct the JSON payload with diff and comments URL
+          JSON_PAYLOAD=$(jq -n \
+            --arg diff "$DIFF_PAYLOAD" \
+            --arg url "${{ github.event.pull_request.comments_url }}" \
+            --arg id "${{ steps.review-id.outputs.review_id }}" \
+            '{diff: $diff, comments_url: $url, review_id: $id}')
+
+          # Debug: Print payload length
+          echo "JSON payload length: ${#JSON_PAYLOAD}"
+          
+          # Remove API key length logging
+          echo "API key configured"
+          
+          # Send the request to our API Gateway with API key authentication
+          echo "Sending request to PR Guardian API..."
+          
+          # Remove verbose output (-v) to prevent sensitive data exposure
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Content-Type: application/json" \
+            -H "X-Api-Key: ${{ secrets.PR_GUARDIAN_API_KEY }}" \
+            -d "$JSON_PAYLOAD" \
+            "$API_URL" 2>&1)
+
+          # Split response into body and status code
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status Code: $HTTP_CODE"
+          echo "Response: $RESPONSE_BODY"
+
+          # Check if the request was accepted (202)
+          if [ "$HTTP_CODE" -eq 202 ]; then
+            echo "✅ PR Guardian review request accepted! Waiting for review to be posted..."
+          else
+            echo "❌ PR Guardian review request failed with status code: $HTTP_CODE"
+            echo "Response body: $RESPONSE_BODY"
+            
+            # Provide more detailed error messages
+            case $HTTP_CODE in
+              400)
+                echo "🚫 400 Bad Request - Check the request payload"
+                ;;
+              401)
+                echo "🔑 401 Unauthorized - Check API key"
+                ;;
+              403)
+                echo "🚫 403 Forbidden - Check API key permissions"
+                ;;
+              429)
+                echo "⏳ 429 Too Many Requests - Rate limit exceeded"
+                ;;
+              500)
+                echo "🔥 500 Internal Server Error - Check Lambda logs"
+                ;;
+              504)
+                echo "⏳ 504 Gateway Timeout - API Gateway timed out. This is unexpected and should be investigated."
+                ;;
+              *)
+                echo "❓ Unexpected error - Status code: $HTTP_CODE"
+                ;;
+            esac
+            exit 1
+          fi
+        env:
+          # Pass diff payload safely as environment variable
+          DIFF_PAYLOAD: ${{ steps.git-diff.outputs.diff_payload }}
+
+      - name: 'Wait for Review Comment'
+        if: steps.git-diff.outputs.diff_payload != '' && (steps.trigger-review.outcome == 'success' || steps.trigger-review.outcome == 'skipped')
+        run: |
+          echo "Waiting for PR Guardian review to be posted..."
+          echo "Review ID: ${{ steps.review-id.outputs.review_id }}"
+          
+          # Maximum wait time (5 minutes)
+          MAX_WAIT=300
+          # Polling interval (5 seconds)
+          INTERVAL=5
+          # Current wait time
+          WAITED=0
+          # Maximum retries for rate limits
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          
+          while [ $WAITED -lt $MAX_WAIT ]; do
+            echo "Polling for comments... (${WAITED}s elapsed)"
+            
+            # Get the latest comments with timeout and capture both stdout and stderr
+            COMMENTS_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time $CURL_TIMEOUT \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "${{ github.event.pull_request.comments_url }}" 2>&1)
+            
+            # Split response into body and status code
+            HTTP_CODE=$(echo "$COMMENTS_RESPONSE" | tail -n1)
+            COMMENTS_BODY=$(echo "$COMMENTS_RESPONSE" | sed '$d')
+            
+            # Check if we got a successful response
+            if [ "$HTTP_CODE" -ne 200 ]; then
+              case $HTTP_CODE in
+                401|403)
+                  echo "🔑 Authentication error - Check GITHUB_TOKEN permissions"
+                  exit 1
+                  ;;
+                404)
+                  echo "🔍 PR comments URL not found - Check PR status"
+                  exit 1
+                  ;;
+                429)
+                  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                    echo "⏳ Rate limit exceeded - Retry $((RETRY_COUNT + 1)) of $MAX_RETRIES"
+                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                    sleep $((30 * RETRY_COUNT))  # Exponential backoff
+                    continue
+                  else
+                    echo "❌ Rate limit retries exhausted"
+                    exit 1
+                  fi
+                  ;;
+                *)
+                  echo "Unexpected error (HTTP $HTTP_CODE) - Will retry in $INTERVAL seconds"
+                  ;;
+              esac
+            else
+              # Reset retry count on success
+              RETRY_COUNT=0
+            fi
+            
+            # Check if response is valid JSON
+            if ! echo "$COMMENTS_BODY" | jq empty 2>/dev/null; then
+              echo "❌ Invalid JSON response from GitHub API:"
+              echo "Response body:"
+              echo "$COMMENTS_BODY"
+              echo "Will retry in $INTERVAL seconds..."
+              sleep $INTERVAL
+              WAITED=$((WAITED + INTERVAL))
+              continue
+            fi
+            
+            # Now that we know it's valid JSON, try to find our review
+            if echo "$COMMENTS_BODY" | jq -e --arg id "${{ steps.review-id.outputs.review_id }}" \
+              '.[] | select(.body | contains($id))' > /dev/null; then
+              echo "✅ PR Guardian review has been posted!"
+              exit 0
+            fi
+            
+            # Wait before next poll
+            sleep $INTERVAL
+            WAITED=$((WAITED + INTERVAL))
+            
+            # Show progress every 30 seconds
+            if [ $((WAITED % 30)) -eq 0 ]; then
+              echo "Still waiting for review... (${WAITED}s elapsed)"
+              echo "Last response was valid JSON but review not found yet"
+            fi
+          done
+          
+          echo "❌ Timed out waiting for PR Guardian review after ${MAX_WAIT} seconds"
+          echo "The review may still be processing. Check the PR comments later."
+          echo "Last GitHub API response:"
+          echo "$COMMENTS_BODY"
+          exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURL_TIMEOUT: 10
+
+      - name: 'No Changes Detected'
+        if: steps.git-diff.outputs.diff_payload == ''
+        run: |
+          echo "No changes detected in the PR. Skipping review."
+          # Change to success exit code since no changes is a valid state
+          exit 0
